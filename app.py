@@ -173,5 +173,15 @@ if submit_btn:
             
         except Exception as e:
             status_box.error(f"오류가 발생했습니다: {e}")
+
+# ===== 푸터(만든이 정보) =====
+st.divider()
+st.markdown("""
+<div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
+    🏫 학교생활기록부 분석 시스템 v1.0<br>
+    만든이: <b>신선여자고등학교 김명남</b><br>
+    🗓️ 2026년 5월 제작
+</div>
+""", unsafe_allow_html=True)
             
 

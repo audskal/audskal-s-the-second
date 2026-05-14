@@ -178,9 +178,9 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v1.0<br>
+    🏫 학교생활기록부 분석 시스템 v3.0<br>
     만든이: <b>신선여자고등학교 김명남</b><br>
-    🗓️ 2026년 5월 제작
+    🗓️ 2026.03
 </div>
 """, unsafe_allow_html=True)
             

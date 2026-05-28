@@ -3,7 +3,7 @@ import google.generativeai as genai
 import PyPDF2
 import os
 import glob
-import requests  # 💡 인터넷 웹페이지 접속을 위해 추가된 모듈
+import requests
 from docx import Document
 from io import BytesIO
 from bs4 import BeautifulSoup
@@ -55,7 +55,6 @@ with col2:
         height=70
     )
     
-    # --- 💡 [핵심 변경] 인터넷 주소(URL) 입력창 추가 ---
     st.markdown("**📚 맞춤형 추천 도서 참고 자료 (선택)**")
     
     default_url = "https://nojaesu.com/category/DIRECTORY/%EA%B5%90%EA%B3%BC%EC%97%B0%EA%B3%84%26%EC%A0%84%EA%B3%B5%EC%A0%81%ED%95%A9%EC%84%9C%20%EA%B8%B0%EC%82%AC%20%EB%AA%A8%EC%9D%8C"
@@ -108,29 +107,22 @@ if submit_btn:
             if not student_data_text.strip():
                 raise Exception("업로드하신 PDF 파일에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
             
-            # --- 💡 웹 크롤링 및 파일 텍스트 추출 통합 ---
             status_box.info("📚 [도서 연동] 추천 도서 목록을 수집하고 정제하는 중입니다...")
             actual_book_data = ""
             
-            # 1. URL 웹 크롤링 시도
             if book_url.strip():
                 try:
-                    # 봇 차단 방지용 헤더 추가 (마치 사람이 브라우저로 접속하는 것처럼 위장)
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    headers = {'User-Agent': 'Mozilla/5.0'}
                     response = requests.get(book_url.strip(), headers=headers)
-                    response.raise_for_status() # 접속 실패 시 에러 발생시킴
-                    
-                    # HTML에서 순수 텍스트만 추출
+                    response.raise_for_status() 
                     soup = BeautifulSoup(response.text, 'html.parser')
                     actual_book_data += soup.get_text(separator=' ', strip=True) + "\n\n"
                 except Exception as e:
-                    st.warning(f"⚠️ 입력하신 링크에 접속할 수 없습니다. 보안이 설정된 사이트일 수 있습니다. (오류 메시지: {e})")
+                    st.warning(f"⚠️ 입력하신 링크에 접속할 수 없습니다. (오류 메시지: {e})")
 
-            # 2. 텍스트 박스 내용 추가
             if book_text_input.strip():
                 actual_book_data += book_text_input + "\n\n"
                 
-            # 3. 파일 업로드 내용 추가
             if book_file:
                 if book_file.name.endswith('.html'):
                     raw_html = book_file.read().decode('utf-8', errors='ignore')
@@ -145,7 +137,6 @@ if submit_btn:
                         if extracted:
                             actual_book_data += extracted + "\n"
             
-            # --- 유연한 프롬프트 세팅 ---
             book_instruction = ""
             if actual_book_data.strip():
                 book_instruction = "반드시 아래 제공된 [추천 도서 참고 자료]의 텍스트 안에 '실제로 존재하는 책 제목과 저자'만 추출해서 추천하세요. 자료 안에 적합한 책이 없다면 억지로 지어내지 말고 '제공된 목록에서 적합한 도서를 찾을 수 없습니다'라고 출력하세요."
@@ -168,14 +159,9 @@ if submit_btn:
             status_box.success(f"🤖 [진행상황 4/4] 수집된 도서 데이터를 바탕으로 분석을 시작합니다...")
             model = genai.GenerativeModel(best_model_name)
             
+            # --- 💡 [프롬프트 재구성] 잊어버리지 않도록 형식 규칙을 하단에 강력히 배치 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사입니다.
-
-            🚨 [절대 엄수 - 팩트 체크 및 소설 작성 금지 규칙!] 🚨
-            1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 지어내지 마세요.
-            2. 학년별 기록 부재 지적 금지: 3학년 기록 부재 등을 단점으로 지적하지 마세요.
-            3. [매우 중요] 도서 추천 규칙: 
-               - {book_instruction}
 
             [담당 교사의 특별 지시사항 및 희망 전공]
             {teacher_context if teacher_context else "특별한 지시사항 없음."}
@@ -189,12 +175,28 @@ if submit_btn:
             [업로드된 학생의 생기부 내용 (100% 팩트)]
             {student_data_text}
 
-            위의 규칙을 완벽히 지켜서, 학생의 실제 데이터만을 바탕으로 아래 5가지 양식에 맞추어 답변해 주세요.
+            🚨 [절대 엄수 - 팩트 체크 및 소설 작성 금지 규칙!] 🚨
+            1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 지어내지 마세요.
+            2. 학년별 기록 부재 지적 금지: 3학년 기록 부재 등을 단점으로 지적하지 마세요.
+            3. 도서 추천 규칙: {book_instruction}
+
+            🚨 [절대 엄수 - 출력 형식 및 출처 표기 규칙! (매우 중요)] 🚨
+            1. 이중 출처 표기 (필수): 1번과 2번 항목에서 학생부의 내용을 언급할 때는 **반드시** 해당 내용이 몇 학년 어느 영역(과목/활동)에 있는지 출처를 밝혀야 합니다.
+               - 문단 시작 시: `■ **[O학년 OO활동, O학년 OO과목]** 핵심 요약` 형태로 표기.
+               - 문장 끝 시: 해당 활동의 개별 출처를 문장 끝에 `[O학년 OO활동]` 형태로 꼬리표 달기.
+            2. 개조식 어미 사용: 1, 2, 4, 5번 항목의 모든 문장 끝은 '~함', '~임', '~됨', '~판단됨' 등으로 명사형 종결할 것. ('~습니다', '~해요' 절대 금지)
+
+            💡 [형식 참고용 작성 예시]
             ### 1. 전공 적합성 및 주요 경쟁력
-            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점
+            ■ **[1학년 진로활동, 1학년 공통수학]** 정량적 분석 능력과 경제 현상 이해
+            학생은 수학적 사고력을 바탕으로 경제 현상을 분석하는 역량이 돋보임. 공통수학 시간에 투자 수익률 모델링을 진행하며 의사결정 도구로 활용함 [1학년 공통수학]. 또한 '경제는 지리다' 독서를 통해 세계 경제 흐름에 대한 시야를 기름 [1학년 진로활동]. 
+
+            위의 규칙을 완벽히 지켜서, 아래 5가지 양식 및 순서에 맞추어 최종 결과물을 작성해 주세요.
+            ### 1. 전공 적합성 및 주요 경쟁력 (반드시 '이중 출처 표기' 및 '개조식' 적용)
+            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (반드시 '이중 출처 표기' 및 '개조식' 적용)
             ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
-            ### 4. 종합 의견 및 향후 발전 방향
-            ### 5. 맞춤형 추천 도서 및 연계 활동 제안
+            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (반드시 제공된 도서 목록 활용)
+            ### 5. 종합 의견 및 향후 발전 방향 (개조식 마무리)
             """
             
             response = model.generate_content(prompt)
@@ -216,7 +218,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v5.0 (웹사이트 자동 크롤링 기능 탑재)<br>
+    🏫 학교생활기록부 분석 시스템 v5.1 (출처 표기 복원 및 목차 순서 최적화)<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

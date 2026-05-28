@@ -55,19 +55,15 @@ with col2:
         height=70
     )
     
-    # --- 💡 [신규 기능] 목표 대학 가이드북 업로드 영역 ---
+    # --- 💡 [유지] 목표 대학 가이드북 업로드 영역 ---
     st.markdown("**🎯 목표 대학 전형 / 전공 가이드북 (선택)**")
     st.info("특정 대학/전공의 인재상과 평가 기준에 맞춘 정밀 분석을 원하시면 해당 대학의 가이드북(PDF)을 업로드하세요.")
     univ_guide_file = st.file_uploader("🏫 대학 가이드북 PDF 업로드", type=["pdf"], key="univ_guide_upload")
     
-    # --- 도서 추천 영역 ---
+    # --- 💡 [수정] 도서 추천 영역 (직접 업로드 제거, URL만 유지) ---
     st.markdown("**📚 맞춤형 추천 도서 참고 자료 (선택)**")
     default_url = "https://nojaesu.com/category/DIRECTORY/%EA%B5%90%EA%B3%BC%EC%97%B0%EA%B3%84%26%EC%A0%84%EA%B3%B5%EC%A0%81%ED%95%A9%EC%84%9C%20%EA%B8%B0%EC%82%AC%20%EB%AA%A8%EC%9D%8C"
     book_url = st.text_input("🌐 추천 도서 웹사이트 주소(URL)", value=default_url)
-    
-    with st.expander("도서 파일 직접 업로드 또는 텍스트 입력 (클릭)"):
-        book_file = st.file_uploader("🔗 도서 목록 파일 업로드 (HTML, PDF, TXT)", type=["html", "pdf", "txt"], key="book_upload")
-        book_text_input = st.text_area("또는 텍스트 직접 붙여넣기", height=100)
     
     submit_btn = st.button("↵ 🚀 목표 대학 맞춤형 심층 분석 시작", type="primary", use_container_width=True)
 
@@ -97,7 +93,7 @@ if submit_btn:
             status_box.info("⏳ [진행상황 1/5] 내장된 기본 가이드북을 학습하는 중입니다...")
             reference_text = load_reference_pdfs(pdf_files)
             
-            # --- 💡 [신규 처리] 대학 가이드북 텍스트 추출 ---
+            # --- 대학 가이드북 텍스트 추출 ---
             univ_guide_text = ""
             if univ_guide_file:
                 status_box.info("🏫 [진행상황 2/5] 업로드된 목표 대학 가이드북의 평가 기준을 분석 중입니다...")
@@ -127,6 +123,7 @@ if submit_btn:
             status_box.info("📚 [진행상황 4/5] 추천 도서 목록을 수집하고 정제하는 중입니다...")
             actual_book_data = ""
             
+            # URL 웹 크롤링만 유지
             if book_url.strip():
                 try:
                     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -136,23 +133,6 @@ if submit_btn:
                     actual_book_data += soup.get_text(separator=' ', strip=True) + "\n\n"
                 except Exception as e:
                     st.warning(f"⚠️ 입력하신 링크에 접속할 수 없습니다. (오류 메시지: {e})")
-
-            if book_text_input.strip():
-                actual_book_data += book_text_input + "\n\n"
-                
-            if book_file:
-                if book_file.name.endswith('.html'):
-                    raw_html = book_file.read().decode('utf-8', errors='ignore')
-                    soup = BeautifulSoup(raw_html, 'html.parser')
-                    actual_book_data += soup.get_text(separator=' ', strip=True) + "\n\n"
-                elif book_file.name.endswith('.txt'):
-                    actual_book_data += book_file.read().decode('utf-8', errors='ignore') + "\n\n"
-                elif book_file.name.endswith('.pdf'):
-                    pdf_reader = PyPDF2.PdfReader(book_file)
-                    for page in pdf_reader.pages:
-                        extracted = page.extract_text()
-                        if extracted:
-                            actual_book_data += extracted + "\n"
             
             book_instruction = ""
             if actual_book_data.strip():
@@ -175,14 +155,14 @@ if submit_btn:
             
             model = genai.GenerativeModel(best_model_name)
             
-            # --- 💡 [프롬프트 재구성] 대학 가이드북 데이터 주입 및 적용 지시 강화 ---
+            # --- 프롬프트 (기존과 100% 동일) ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사입니다.
 
             [담당 교사의 특별 지시사항 및 희망 전공]
             {teacher_context if teacher_context else "특별한 지시사항 없음."}
             
-            [추천 도서 참고 자료 (웹사이트 및 파일에서 추출된 텍스트)]
+            [추천 도서 참고 자료 (웹사이트 추출 텍스트)]
             {actual_book_data if actual_book_data else "제공된 목록 없음."}
 
             [기본 범용 대학 평가 기준 자료]
@@ -237,8 +217,8 @@ if submit_btn:
 
 st.divider()
 st.markdown("""
-<div style='text-align: center; color: gray; padding: 24px; font-size: 15px;'>
-    🏫 학교생활기록부 분석 시스템 v6.1 (목표 대학/전공 맞춤형 분석 통합본)<br>
+<div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
+    🏫 학교생활기록부 분석 시스템 v6.1 (불필요한 UI 정리 완료)<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

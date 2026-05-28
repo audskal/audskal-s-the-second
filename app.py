@@ -5,6 +5,8 @@ import os
 import glob
 from docx import Document
 from io import BytesIO
+import urllib.parse
+from bs4 import BeautifulSoup  # 💡 HTML에서 순수 텍스트만 추출하기 위해 추가됨
 
 st.set_page_config(page_title="audskal의 학교생활기록부 분석", layout="wide")
 st.title("🏫 객관적이고 체계적인 학생부 분석")
@@ -53,10 +55,12 @@ with col2:
         height=70
     )
     
-    # --- [신규 추가] 도서 추천을 위한 참고 자료 입력란 ---
+    default_book_link = "file:///D:/%EC%9B%90%EB%93%9C%EB%9D%BC%EC%9D%B4%EB%B8%8C/OneDrive%20-%20%EC%9A%B8%EC%82%B0%EA%B4%91%EC%97%AD%EC%8B%9C%EA%B5%90%EC%9C%A1%EC%B2%AD/%EB%AC%B8%EC%84%9C/%EC%B9%B4%EC%B9%B4%EC%98%A4%ED%86%A1%20%EB%B0%9B%EC%9D%80%20%ED%8C%8C%EC%9D%BC/%EB%AF%B8%EB%9E%98%EB%A5%BC%20%EC%97%AC%EB%8A%94%20%EC%84%9C%EC%9E%AC(%EB%82%B4%EC%9D%BC%EA%B5%90%EC%9C%A1%20%EA%B6%8C%EC%9E%A5%EB%8F%84%EC%84%9C%20%EA%B4%80%EB%A0%A8%20%EA%B8%B0%EC%82%AC%20%EA%B2%80%EC%83%89-%EC%8B%A0%EC%84%A0%EC%97%AC%EA%B3%A0%20%EC%9E%84%EC%A2%85%EC%9A%B0).html"
+    
     book_reference = st.text_input(
         "🔗 추천 도서 참고 링크 또는 목록 (선택)", 
-        placeholder="예: 미래를 여는 서재 링크 또는 도서명 목록 입력 (비워두면 AI가 알아서 추천합니다)"
+        value=default_book_link,
+        placeholder="도서 링크 또는 목록 입력"
     )
     
     submit_btn = st.button("↵ 🚀 심층 분석 시작 (클릭)", type="primary", use_container_width=True)
@@ -100,8 +104,26 @@ if submit_btn:
                         student_data_text += text + "\n"
             
             if not student_data_text.strip():
-                raise Exception("업로드하신 PDF 파일에서 글씨를 읽을 수 없습니다! (이미지 스캔본이거나 나이스 보안파일입니다). PDF 대신 왼쪽 빈칸에 생기부 내용을 직접 마우스로 긁어서 붙여넣어 주세요.")
+                raise Exception("업로드하신 PDF 파일에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
             
+            # --- 💡 [핵심 수정 부분] HTML 태그를 제거하고 순수 텍스트만 추출 ---
+            status_box.info("📚 [도서 연동] 추천 도서 목록을 정제하는 중입니다...")
+            actual_book_data = book_reference
+            
+            if book_reference.startswith("file:///"):
+                try:
+                    local_path = urllib.parse.unquote(book_reference.replace("file:///", ""))
+                    if os.path.exists(local_path):
+                        with open(local_path, "r", encoding="utf-8", errors='ignore') as f:
+                            raw_html = f.read()
+                            # BeautifulSoup을 사용하여 HTML 태그를 모두 벗겨내고 텍스트만 추출
+                            soup = BeautifulSoup(raw_html, 'html.parser')
+                            actual_book_data = soup.get_text(separator=' ', strip=True)
+                    else:
+                        actual_book_data = "제공된 파일 없음."
+                except Exception as e:
+                    actual_book_data = "제공된 파일 없음."
+
             status_box.warning("🔍 [진행상황 3/4] 최적의 구글 AI 모델을 탐색 중입니다...")
             genai.configure(api_key=api_key)
             
@@ -115,50 +137,25 @@ if submit_btn:
             if best_model_name == "":
                 raise Exception("사용할 수 있는 AI 모델이 없습니다.")
             
-            status_box.success(f"🤖 [진행상황 4/4] AI 엔진('{best_model_name}') 장착 완료! 객관적 경쟁력 분석을 시작합니다...")
+            status_box.success(f"🤖 [진행상황 4/4] 분석을 시작합니다...")
             model = genai.GenerativeModel(best_model_name)
             
-            # --- [수정된 마법의 프롬프트: 추천 도서 및 활동 제안 영역 추가] ---
+            # --- 💡 [프롬프트 강화] 도서 추천 시 절대 지어내지 말 것을 강력히 지시 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사입니다.
-            아래에 제공된 [대학 평가 기준 자료]는 훌륭한 학생부를 판단하기 위한 '참고용 범용 벤치마크(기준점)'입니다.
-            이 기준점들에 비추어 보았을 때, [업로드된 학생의 생기부 내용]이 가진 객관적인 경쟁력과 역량 수준을 날카롭게 분석해 주세요.
-
-            🚨 [주의: 특정 대학 편향 금지] 🚨
-            - 특정 대학교에 지원한다는 가정하에 작성하지 마세요. 
-            - 평가 기준 자료에 등장하는 특정 대학교 이름이나 '목표 대학'이라는 단어를 억지로 출력하지 마세요. 
-            - 오직 '상위권 대학들이 공통으로 요구하는 역량'을 잣대로 삼아, 이 학생부 자체가 가진 경쟁력과 전공 적합성에만 집중하세요.
 
             🚨 [절대 엄수 - 팩트 체크 및 소설 작성 금지 규칙!] 🚨
-            1. 팩트 기반 작성 (할루시네이션 절대 금지): 
-               - 반드시 [업로드된 학생의 생기부 내용]에 '실제로 적혀있는 학년'과 '실제로 한 활동'만 가지고 분석하세요.
-               - 생기부에 없는 내용, 학년, 과목명, 활동명은 단 한 글자도 지어내면 안 됩니다.
-            2. 예시 내용 복사 금지: 
-               - 아래의 [작성 예시]는 구조와 문체를 보여주기 위함입니다. 빈칸에 반드시 학생의 '실제 데이터'만 채워 넣으세요.
-            3. 🆕 학년별 기록 부재를 약점으로 지적 절대 금지!: 
-               - 본 분석 시점은 학기 진행 중이며, 특히 3학년의 경우 아직 학생부 기록이 입력되지 않은 것이 정상임.
-               - "3학년 기록 부재", "3학년 교과 이수 현황 부재", "○학년 자료 부족", "학년별 자료의 일관성 부족", "최종 단계 자료 미비" 등 학년별 기록의 양적/시간적 부재를 약점으로 지적 절대 금지!
-               - 대신 '현재까지 입력된 1, 2학년 자료'만을 토대로 학생의 역량을 객관적으로 평가할 것.
-               - 약점 분석 시에는 오직 '실제 입력된 활동 내용 자체의 질적 한계'(예: 특정 과목 성취도, 활동의 깊이 부족, 진로 연계성 부족 등)에만 집중할 것.
-
-            🚨 [형식 및 문체 규칙] 🚨
-            1. 압축 서술: 사소한 활동은 버리고, 테마별로 가장 강력한 활동 단 2~3개만 엄선하여 3~4문장으로 압축할 것.
-            2. 이중 출처 표기:
-               - 문단 시작: 핵심 출처를 묶어서 `**[1학년 진로, 2학년 물리]** ` 형태로 표기.
-               - 문장 끝: 해당 활동의 개별 출처를 `[1학년 진로]` 형태로 꼬리표 달기.
-            3. 전 구간 개조식 어미 사용: 
-               - 모든 문장의 끝은 '~함', '~임', '~됨', '~판단됨', '~요망됨' 으로 끝낼 것. ('~다', '~합니다' 절대 금지)
-
-            💡 [형식 참고용 작성 예시]
-            ### 1. 전공 적합성 및 주요 강점
-            ■ (학생의 데이터 기반 핵심 테마 소제목)
-            **[O학년 OO활동, O학년 OO과목]** 학생은 (학생의 실제 호기심이나 역량 요약) 모습이 돋보임. O학년 때 (실제 활동 1)에 참여하여 (배운 점 1)을 학습함 [O학년 OO활동]. O학년 행사에서는 (실제 활동 2)를 탐구하고 (배운 점 2) 능력을 향상함 [O학년 OO과목]. 
+            1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 지어내지 마세요.
+            2. 학년별 기록 부재 지적 금지: 3학년 기록 부재 등을 단점으로 지적하지 마세요.
+            3. [매우 중요] 도서 추천 규칙: 
+               - 반드시 아래 제공된 [추천 도서 참고 자료]의 텍스트 안에 '실제로 존재하는 책 제목과 저자'만 추출해서 추천하세요.
+               - 자료 안에 적합한 책이 없다면, 억지로 가짜 책을 지어내지 말고 차라리 "제공된 목록에서 적합한 도서를 찾을 수 없습니다"라고 출력하세요. 임의로 책 제목과 저자를 창작(할루시네이션)하는 행위를 엄격히 금지합니다.
 
             [담당 교사의 특별 지시사항 및 희망 전공]
             {teacher_context if teacher_context else "특별한 지시사항 없음."}
             
-            [추천 도서 참고 자료 및 링크]
-            {book_reference if book_reference else "제공된 링크 없음. AI가 내장하고 있는 우수 권장 도서 및 전공 적합 도서 데이터를 적극 활용하여 추천할 것."}
+            [추천 도서 참고 자료 (추출된 순수 텍스트)]
+            {actual_book_data}
 
             [대학 평가 기준 자료 (범용 벤치마크용)]
             {reference_text}
@@ -167,11 +164,11 @@ if submit_btn:
             {student_data_text}
 
             위의 규칙을 완벽히 지켜서, 학생의 실제 데이터만을 바탕으로 아래 5가지 양식에 맞추어 답변해 주세요.
-            ### 1. 전공 적합성 및 주요 경쟁력 (테마별 소제목 작성, 테마당 3~4문장 압축, 이중 출처 표기)
-            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (실제 데이터 기반 압축 서술, 이중 출처 표기) ※ 학년별 기록 부재는 약점으로 지적 금지! 오직 입력된 활동 내용의 질적 한계만 분석할 것!
+            ### 1. 전공 적합성 및 주요 경쟁력
+            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점
             ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
-            ### 4. 종합 의견 및 향후 발전 방향 (구체적인 액션 플랜과 최종 코멘트 포함, 개조식 마무리)
-            ### 5. 맞춤형 추천 도서 및 연계 활동 제안 (희망 전공과 직결된 도서 3권을 추천하고, 각 도서를 읽은 후 세특이나 자율/진로 활동에 녹여낼 수 있는 구체적인 '후속 탐구 활동'을 1~2문장으로 제안할 것)
+            ### 4. 종합 의견 및 향후 발전 방향
+            ### 5. 맞춤형 추천 도서 및 연계 활동 제안 (반드시 [추천 도서 참고 자료] 내에 명시된 실제 도서명과 저자만 사용할 것)
             """
             
             response = model.generate_content(prompt)
@@ -181,21 +178,19 @@ if submit_btn:
             
             word_file = create_word_file(response.text)
             st.download_button(
-                label="📥 분석 결과 워드(Word) 파일로 다운로드",
+                label="📥 분석 결과 워드 다운로드",
                 data=word_file,
-                file_name="생기부_분석결과_도서추천포함.docx",
+                file_name="생기부_분석결과.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
             
         except Exception as e:
             status_box.error(f"오류가 발생했습니다: {e}")
 
-# ===== 푸터(만든이 정보) =====
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v4.0<br>
-    만든이: <b>신선여자고등학교 김명남</b><br>
-    🗓️ 2026.04
+    🏫 학교생활기록부 분석 시스템 v4.2 (할루시네이션 방지 패치)<br>
+    만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

@@ -118,7 +118,7 @@ if submit_btn:
             if not student_data_text.strip():
                 raise Exception("생기부에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
             
-            status_box.info("📚 [진행상황 4/5] 추천 도서 목록을 수집하고 정제하는 중입니다...")
+            status_box.info("📚 [진행상황 4/5] 추천 도서 목록 및 상세 본문을 수집하는 중입니다...")
             actual_book_data = ""
             
             if book_url.strip():
@@ -128,6 +128,31 @@ if submit_btn:
                     response.raise_for_status() 
                     soup = BeautifulSoup(response.text, 'html.parser')
                     actual_book_data += soup.get_text(separator=' ', strip=True) + "\n\n"
+                    
+                    # --- 💡 [핵심 업그레이드] 게시글 상세 페이지 링크를 찾아내어 본문까지 크롤링 ---
+                    base_url = "/".join(book_url.split("/")[:3]) # ex: https://nojaesu.com
+                    article_links = []
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        # 티스토리 등 게시물 주소 패턴 추출 (/숫자 또는 /entry/)
+                        if re.match(r'^/[0-9]+(\?.*)?$', href) or "/entry/" in href:
+                            full_url = base_url + href.split('?')[0]
+                            if full_url not in article_links:
+                                article_links.append(full_url)
+                    
+                    # 상위 10개 게시물의 상세 내용 추출
+                    if article_links:
+                        status_box.info(f"📚 [도서 연동] {len(article_links[:10])}개의 구체적인 도서 상세 설명을 추가로 수집 중입니다...")
+                        for link in article_links[:10]:
+                            try:
+                                sub_res = requests.get(link, headers=headers, timeout=5)
+                                sub_soup = BeautifulSoup(sub_res.text, 'html.parser')
+                                # 게시글 본문 영역 내용만 추출
+                                content_area = sub_soup.find('div', class_='entry-content') or sub_soup.find('div', class_='article_view') or sub_soup.body
+                                if content_area:
+                                    actual_book_data += content_area.get_text(separator=' ', strip=True) + "\n\n"
+                            except:
+                                pass
                 except Exception as e:
                     st.warning(f"⚠️ 입력하신 링크에 접속할 수 없습니다. (오류 메시지: {e})")
             
@@ -157,14 +182,14 @@ if submit_btn:
             
             model = genai.GenerativeModel(best_model_name)
             
-            # --- 💡 [프롬프트 수정] 테마 소제목 강제 지시 및 예약된 양식 적용 ---
+            # --- 💡 [프롬프트 수정] 도서 제목 명확화 및 지난번 예약 양식(1,2번) 완벽 적용 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
 
             [담당 교사의 특별 지시사항 및 희망 전공]
             {teacher_context if teacher_context else "특별한 지시사항 없음."}
             
-            [추천 도서 참고 자료 (웹사이트 추출 텍스트)]
+            [추천 도서 참고 자료 (게시물 상세 본문 포함)]
             {actual_book_data if actual_book_data else "제공된 목록 없음."}
 
             [기본 범용 대학 평가 기준 자료]
@@ -193,25 +218,22 @@ if submit_btn:
                - 학년과 과목은 개별 분리하세요. (예: [1, 2학년 진로] ❌ -> [1학년 진로활동, 2학년 진로활동] ⭕)
             
             2. 소제목 강제 및 100% 일치 (추가/누락 절대 금지):
-               - 반드시 문단 시작 부분에 **'테마 요약 소제목'을 먼저 적고**, 그 뒤에 대괄호로 확정된 출처를 선언하세요. (예: ■ 공학적 설계 및 문제 해결 역량 [1학년 기술·가정, 2학년 동아리활동]) 소제목 없이 괄호만 출력하면 안 됩니다.
+               - 반드시 문단 시작 부분에 **'테마 요약 소제목'을 먼저 적고**, 그 뒤에 대괄호로 확정된 출처를 선언하세요. (예: ■ 공학적 설계 및 문제 해결 역량 [1학년 기술·가정, 2학년 동아리활동]) 
                - 소제목 옆에 선언한 출처와 본문 끝의 개별 꼬리표는 100% 일치해야 합니다. 즉흥적 추가나 누락을 금지합니다.
 
-            3. 🚫 [도서 추천 출력 양식 (순차 번호 정렬)]:
-               - 추천 도서 목록을 작성할 때는 원본 자료의 불규칙한 번호를 무시하고, 반드시 1번부터 차례대로 빠짐없이 순서를 새롭게 매기세요.
-               - 지정된 포맷: "과목명: 1. 도서명(저자명 저)"
+            3. 🚫 [도서 추천 출력 양식 (실제 책 제목 사용 및 구체적 소개!)]:
+               - 참고 자료(웹사이트)의 목록에 쓰인 '카테고리명'(예: 물리 신소재, 생명과학 노화)을 책 제목으로 착각하여 적지 마세요.
+               - 반드시 크롤링된 세부 본문 안에서 **실제 책 제목(예: <쓸모의 과학, 신소재>, <금속의 쓸모> 등)과 정확한 저자**를 찾아내어 기재하세요.
+               - 책에 대한 구체적인 소개와 설명(추천 이유)을 자료 안의 세부 내용을 바탕으로 상세히 서술하세요.
+               - 지정된 포맷: "과목명: 순차번호. 도서명(저자명 저) - 구체적인 도서 소개 및 추천 이유"
 
             4. 개조식 어미 사용: 문장 끝은 '~함', '~임', '~됨', '~판단됨' 으로 명사형 종결할 것.
-
-            💡 [형식 참고용 정답 템플릿 (소제목 및 출처 100% 일치 예시)]
-            ### 1. 전공 적합성 및 주요 경쟁력
-            ■ 공학적 설계 및 문제 해결 역량 [1학년 기술·가정, 2학년 동아리활동]
-            학생은 실생활 문제 해결을 위한 공학적 사고 능력을 구체적인 활동으로 구현하는 역량이 탁월함. 발명품 만들기 프로젝트에서 기존의 문제점을 구체화하여 디자인을 개선하는 창의성을 발휘함 [1학년 기술·가정]. 몰 질량 측정 실험에서 실패 원인을 분석하고 재실험하여 오차를 줄이는 등 주도적인 탐구 태도가 인상적임 [2학년 동아리활동].
 
             위의 모든 규칙과 템플릿을 완벽히 적용하여, 아래 5가지 양식에 맞추어 최종 결과물을 작성해 주세요.
             ### 1. 전공 적합성 및 주요 경쟁력 (테마별 엄선, 평가적 분석 서술, 100% 일치하는 분리 출처, 개조식)
             ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (엄선된 약점 분석, 100% 일치하는 분리 출처, 개조식) ※ 부재중인 학년의 기록 부족 지적 불가!
             ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
-            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (과목명: 순차번호. 도서명(저자) 형식 준수)
+            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (반드시 제공된 도서 목록 활용 및 구체적 도서 설명 포함)
             ### 5. 종합 의견 및 향후 발전 방향
             """
             
@@ -234,7 +256,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v7.2<br>
+    🏫 학교생활기록부 분석 시스템 v7.3<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

@@ -190,7 +190,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v4.2 (할루시네이션 방지 패치)<br>
+    🏫 학교생활기록부 분석 시스템 v4.2<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

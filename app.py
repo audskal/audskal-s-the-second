@@ -218,7 +218,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v5.1 (출처 표기 복원 및 목차 순서 최적화)<br>
+    🏫 학교생활기록부 분석 시스템 v5.1<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

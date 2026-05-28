@@ -5,8 +5,7 @@ import os
 import glob
 from docx import Document
 from io import BytesIO
-import urllib.parse
-from bs4 import BeautifulSoup  # 💡 HTML에서 순수 텍스트만 추출하기 위해 추가됨
+from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="audskal의 학교생활기록부 분석", layout="wide")
 st.title("🏫 객관적이고 체계적인 학생부 분석")
@@ -51,17 +50,15 @@ with col1:
 with col2:
     st.subheader("2. 학생부 분석을 위한 추가 정보 입력")
     teacher_context = st.text_area(
-        "💡 특이사항 및 희망 전공 (예: 전기전자공학 진학 희망)", 
+        "💡 특이사항 및 희망 전공 (예: 경영학과 진학 희망)", 
         height=70
     )
     
-    default_book_link = "file:///D:/%EC%9B%90%EB%93%9C%EB%9D%BC%EC%9D%B4%EB%B8%8C/OneDrive%20-%20%EC%9A%B8%EC%82%B0%EA%B4%91%EC%97%AD%EC%8B%9C%EA%B5%90%EC%9C%A1%EC%B2%AD/%EB%AC%B8%EC%84%9C/%EC%B9%B4%EC%B9%B4%EC%98%A4%ED%86%A1%20%EB%B0%9B%EC%9D%80%20%ED%8C%8C%EC%9D%BC/%EB%AF%B8%EB%9E%98%EB%A5%BC%20%EC%97%AC%EB%8A%94%20%EC%84%9C%EC%9E%AC(%EB%82%B4%EC%9D%BC%EA%B5%90%EC%9C%A1%20%EA%B6%8C%EC%9E%A5%EB%8F%84%EC%84%9C%20%EA%B4%80%EB%A0%A8%20%EA%B8%B0%EC%82%AC%20%EA%B2%80%EC%83%89-%EC%8B%A0%EC%84%A0%EC%97%AC%EA%B3%A0%20%EC%9E%84%EC%A2%85%EC%9A%B0).html"
-    
-    book_reference = st.text_input(
-        "🔗 추천 도서 참고 링크 또는 목록 (선택)", 
-        value=default_book_link,
-        placeholder="도서 링크 또는 목록 입력"
-    )
+    # --- 💡 [핵심 변경] 파일 직접 업로드 및 텍스트 붙여넣기 기능 통합 ---
+    st.markdown("**📚 맞춤형 추천 도서 참고 자료 (선택)**")
+    st.info("특정 도서 목록(기사 등) 안에서 추천을 원하실 경우 파일을 업로드하거나 텍스트를 붙여넣으세요. 비워두시면 AI가 자체 데이터를 활용합니다.")
+    book_file = st.file_uploader("🔗 도서 목록 파일 업로드 (HTML, PDF, TXT)", type=["html", "pdf", "txt"])
+    book_text_input = st.text_area("또는 텍스트 직접 붙여넣기", height=100, placeholder="여기에 책 제목과 저자 목록을 복사해서 붙여넣으세요.")
     
     submit_btn = st.button("↵ 🚀 심층 분석 시작 (클릭)", type="primary", use_container_width=True)
 
@@ -106,23 +103,32 @@ if submit_btn:
             if not student_data_text.strip():
                 raise Exception("업로드하신 PDF 파일에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
             
-            # --- 💡 [핵심 수정 부분] HTML 태그를 제거하고 순수 텍스트만 추출 ---
+            # --- 💡 파일 업로드 및 텍스트 처리 ---
             status_box.info("📚 [도서 연동] 추천 도서 목록을 정제하는 중입니다...")
-            actual_book_data = book_reference
+            actual_book_data = ""
             
-            if book_reference.startswith("file:///"):
-                try:
-                    local_path = urllib.parse.unquote(book_reference.replace("file:///", ""))
-                    if os.path.exists(local_path):
-                        with open(local_path, "r", encoding="utf-8", errors='ignore') as f:
-                            raw_html = f.read()
-                            # BeautifulSoup을 사용하여 HTML 태그를 모두 벗겨내고 텍스트만 추출
-                            soup = BeautifulSoup(raw_html, 'html.parser')
-                            actual_book_data = soup.get_text(separator=' ', strip=True)
-                    else:
-                        actual_book_data = "제공된 파일 없음."
-                except Exception as e:
-                    actual_book_data = "제공된 파일 없음."
+            if book_text_input.strip():
+                actual_book_data = book_text_input
+            elif book_file:
+                if book_file.name.endswith('.html'):
+                    raw_html = book_file.read().decode('utf-8', errors='ignore')
+                    soup = BeautifulSoup(raw_html, 'html.parser')
+                    actual_book_data = soup.get_text(separator=' ', strip=True)
+                elif book_file.name.endswith('.txt'):
+                    actual_book_data = book_file.read().decode('utf-8', errors='ignore')
+                elif book_file.name.endswith('.pdf'):
+                    pdf_reader = PyPDF2.PdfReader(book_file)
+                    for page in pdf_reader.pages:
+                        extracted = page.extract_text()
+                        if extracted:
+                            actual_book_data += extracted + "\n"
+            
+            # --- 유연한 프롬프트 세팅 ---
+            book_instruction = ""
+            if actual_book_data.strip():
+                book_instruction = "반드시 아래 제공된 [추천 도서 참고 자료]의 텍스트 안에 '실제로 존재하는 책 제목과 저자'만 추출해서 추천하세요. 자료 안에 적합한 책이 없다면 억지로 지어내지 말고 '제공된 목록에서 적합한 도서를 찾을 수 없습니다'라고 출력하세요."
+            else:
+                book_instruction = "별도로 제공된 도서 목록이 없으므로, AI가 자체적으로 학습한 실존하는 전공 적합 우수 도서 3권을 추천해 주세요. (가상의 책을 지어내는 할루시네이션 절대 금지)"
 
             status_box.warning("🔍 [진행상황 3/4] 최적의 구글 AI 모델을 탐색 중입니다...")
             genai.configure(api_key=api_key)
@@ -140,7 +146,6 @@ if submit_btn:
             status_box.success(f"🤖 [진행상황 4/4] 분석을 시작합니다...")
             model = genai.GenerativeModel(best_model_name)
             
-            # --- 💡 [프롬프트 강화] 도서 추천 시 절대 지어내지 말 것을 강력히 지시 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사입니다.
 
@@ -148,14 +153,13 @@ if submit_btn:
             1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 지어내지 마세요.
             2. 학년별 기록 부재 지적 금지: 3학년 기록 부재 등을 단점으로 지적하지 마세요.
             3. [매우 중요] 도서 추천 규칙: 
-               - 반드시 아래 제공된 [추천 도서 참고 자료]의 텍스트 안에 '실제로 존재하는 책 제목과 저자'만 추출해서 추천하세요.
-               - 자료 안에 적합한 책이 없다면, 억지로 가짜 책을 지어내지 말고 차라리 "제공된 목록에서 적합한 도서를 찾을 수 없습니다"라고 출력하세요. 임의로 책 제목과 저자를 창작(할루시네이션)하는 행위를 엄격히 금지합니다.
+               - {book_instruction}
 
             [담당 교사의 특별 지시사항 및 희망 전공]
             {teacher_context if teacher_context else "특별한 지시사항 없음."}
             
             [추천 도서 참고 자료 (추출된 순수 텍스트)]
-            {actual_book_data}
+            {actual_book_data if actual_book_data else "제공된 목록 없음."}
 
             [대학 평가 기준 자료 (범용 벤치마크용)]
             {reference_text}
@@ -168,7 +172,7 @@ if submit_btn:
             ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점
             ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
             ### 4. 종합 의견 및 향후 발전 방향
-            ### 5. 맞춤형 추천 도서 및 연계 활동 제안 (반드시 [추천 도서 참고 자료] 내에 명시된 실제 도서명과 저자만 사용할 것)
+            ### 5. 맞춤형 추천 도서 및 연계 활동 제안
             """
             
             response = model.generate_content(prompt)
@@ -190,7 +194,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v4.2<br>
+    🏫 학교생활기록부 분석 시스템 v4.3 (도서 파일 직접 업로드 지원)<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

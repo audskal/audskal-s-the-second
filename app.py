@@ -5,7 +5,6 @@ import os
 import glob
 import requests
 import re
-import json
 from docx import Document
 from io import BytesIO
 from bs4 import BeautifulSoup
@@ -29,12 +28,11 @@ def load_reference_pdfs(pdf_list):
 with st.sidebar:
     st.header("🔑 기본 설정")
     
-    # --- 💡 [신규 기능] API 제공자 선택 옵션 추가 ---
     api_provider = st.radio("🤖 API 제공자 선택", ["Google AI Studio", "OpenRouter"])
     api_key = st.text_input("🔑 API 키를 입력하세요", type="password")
     
     if api_provider == "OpenRouter":
-        or_model = st.selectbox("사용할 모델 선택", ["google/gemini-2.5-flash", "anthropic/claude-3.5-sonnet", "openai/gpt-4o"])
+        or_model = st.selectbox("사용할 모델 선택", ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.5-flash"])
         st.markdown("[🔗 OpenRouter 무료 API 키 발급](https://openrouter.ai/keys)")
     else:
         st.markdown("[👉 Google AI Studio 무료 API 키 발급](https://aistudio.google.com/app/apikey)")
@@ -172,9 +170,8 @@ if submit_btn:
             else:
                 book_instruction = "별도로 제공된 도서 목록이 없으므로, AI가 자체적으로 학습한 실존하는 전공 적합 우수 도서를 추천해 주세요. (할루시네이션 절대 금지)"
 
-            status_box.warning(f"🔍 [마무리 준비] {api_provider} API를 통해 심층 분석을 시작합니다...")
+            status_box.warning(f"🔍 [마무리 준비] {api_provider} API를 통해 심층 분석을 시작합니다... (실시간으로 작성됩니다)")
             
-            # --- 💡 [프롬프트 대규모 고도화] 2번 약점 보완 강제 및 4번 도서 연계활동 양식 지정 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
 
@@ -204,39 +201,27 @@ if submit_btn:
             4. 개조식 어미 사용: 문장 끝은 '~함', '~임', '~됨', '~판단됨' 으로 명사형 종결할 것.
 
             🚨 [항목별 세부 작성 규칙 (반드시 지킬 것!)] 🚨
-            - 2번 항목(약점 분석): 반드시 최소 2가지 이상의 약점을 분석하세요. 약점을 지적할 때는 **반드시 학생부에 기재된 특정 활동 내용을 구체적으로 선언급(출처 꼬리표 포함)한 뒤**, 해당 활동의 한계를 짚고, 이를 보완하기 위한 구체적인 심화 탐구 방안이나 실질적 프로젝트를 제안하세요.
+            - 2번 항목(약점 분석): 반드시 최소 2가지 이상의 약점을 분석하세요. 약점을 지적할 때는 반드시 학생부에 기재된 특정 활동 내용을 구체적으로 언급(출처 꼬리표 포함)한 뒤, 이를 보완하기 위한 구체적인 심화 탐구 방안이나 실질적 프로젝트를 제안하세요.
             - 4번 항목(추천 도서 및 연계 활동):
-              1) 도서를 나열할 때 반드시 **"■ 교과명(또는 영역명):"** 이라는 굵은 소제목으로 과목/영역을 확실히 구분하세요.
+              1) 도서를 나열할 때 반드시 "■ 교과명(또는 영역명):" 이라는 굵은 소제목으로 과목/영역을 확실히 구분하세요.
               2) 각 과목 아래에 도서를 1번부터 차례대로 순차 번호를 매겨 나열하세요.
               3) 도서 1개당 아래의 2줄 포맷을 무조건 지키세요.
                  [번호]. <실제 책제목> (저자명 저) - 세부 본문 내용을 바탕으로 한 구체적인 도서 소개 및 추천 이유
                  **연계 활동:** 학생의 [O학년 OO과목] 내용과 매칭하여 구체적으로 어떤 심화 탐구/보고서 작성을 할 수 있는지 제안함.
 
-            💡 [형식 참고용 정답 템플릿]
-            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점
-            ■ 전공 심화 탐구 활동의 구체적인 실행 경험 부족 [1학년 진로활동, 1학년 통합과학]
-            노화 원인 탐구에 대한 질문 확장을 통해 생명공학 분야에 깊은 관심은 드러냈으나 [1학년 진로활동], 유전자 가위 기술 탐구 등 단발적인 학습 경험에 그치고 본인만의 가설 설정과 검증 과정을 포함하는 확장된 탐구 경험으로 이어졌다는 내용은 확인하기 어려움 [1학년 통합과학]. 이를 보완하기 위해 가설을 세우고 실제 데이터를 수집, 분석하는 장기적인 심화 탐구 프로젝트를 기획하여 실천적 역량을 보여줄 필요가 있음.
-
-            ### 4. 맞춤형 추천 도서 및 연계 활동 제안
-            ■ 수학:
-            1. <수학이 일상에서 이렇게 쓸모 있을 줄이야> (클라라 그리마 저) - 수학의 본질과 현실 속 쓰임을 풍부한 사례로 설명하여 학생의 호기심 해소에 도움이 됨.
-            **연계 활동:** 이 책을 통해 얻은 아이디어를 바탕으로 [1학년 공통수학]에서 배운 이차함수 개념이 실생활에 적용되는 사례를 탐구하는 보고서를 작성함.
-            
-            ■ 생명과학:
-            2. <세포처럼 나이 들 수 있다면> (김영웅 저) - 노화가 단일 원인이 아닌 복합적 과정임을 이해하고 텔로미어 마모에 대한 심화 질문을 확장하는 데 적합함.
-            **연계 활동:** 독서 후 [1학년 진로활동]의 노화 탐구 기록과 연계하여 '노화 방지 기술의 윤리적 책임'을 주제로 논평을 작성하는 활동을 제안함.
-
             위의 모든 규칙과 템플릿을 완벽히 적용하여, 아래 5가지 양식에 맞추어 최종 결과물을 작성해 주세요.
             ### 1. 전공 적합성 및 주요 경쟁력 (테마별 엄선, 평가적 분석 서술, 100% 일치하는 분리 출처, 개조식)
             ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (엄선된 약점 분석, 100% 일치하는 분리 출처, 개조식) ※ 부재중인 학년의 기록 부족 지적 불가!
             ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
-            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (과목명 분류, 도서명(저자) 형식, **연계 활동:** 서술 필수)
+            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (과목명: 순차번호. 도서명(저자) 형식 준수, **연계 활동:** 서술 필수)
             ### 5. 종합 의견 및 향후 발전 방향
             """
             
             result_text = ""
             
-            # --- 💡 [신규] API 제공자에 따른 분기 처리 ---
+            # 출력 결과를 실시간으로 보여줄 빈 공간 생성
+            output_container = st.empty()
+            
             if api_provider == "Google AI Studio":
                 best_model_name = ""
                 for m in genai.list_models():
@@ -246,9 +231,20 @@ if submit_btn:
                             break 
                 if best_model_name == "":
                     raise Exception("Google AI Studio에서 사용할 수 있는 모델이 없습니다.")
+                
                 model = genai.GenerativeModel(best_model_name)
-                response = model.generate_content(prompt)
-                result_text = response.text
+                
+                # --- 💡 [핵심 패치] 실시간 스트리밍 모드(stream=True) 활성화 ---
+                response = model.generate_content(prompt, stream=True)
+                
+                for chunk in response:
+                    if chunk.text:
+                        result_text += chunk.text
+                        # 실시간으로 글자가 타이핑되는 효과
+                        output_container.markdown(result_text + " ▌")
+                        
+                # 타이핑이 끝나면 깜빡이는 커서(▌) 제거
+                output_container.markdown(result_text)
 
             elif api_provider == "OpenRouter":
                 headers = {
@@ -259,12 +255,12 @@ if submit_btn:
                     "model": or_model,
                     "messages": [{"role": "user", "content": prompt}]
                 }
-                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
-                res.raise_for_status() # 오류 발생 시 멈춤
+                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=180)
+                res.raise_for_status()
                 result_text = res.json()['choices'][0]['message']['content']
+                output_container.markdown(result_text)
 
             status_box.success("✅ [분석 완료!] 심층 분석이 완료되었습니다. 결과물을 확인해 주세요!")
-            st.write(result_text)
             
             word_file = create_word_file(result_text)
             st.download_button(
@@ -280,7 +276,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v8.1<br>
+    🏫 학교생활기록부 분석 시스템 v8.2<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

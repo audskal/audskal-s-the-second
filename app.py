@@ -28,15 +28,33 @@ def load_reference_pdfs(pdf_list):
 with st.sidebar:
     st.header("🔑 기본 설정")
     
-    # --- 💡 [신규 기능 1] API 제공자 선택 옵션 추가 ---
     api_provider = st.radio("🤖 API 제공자 선택", ["Google AI Studio", "OpenRouter"])
     api_key = st.text_input("🔑 API 키를 입력하세요", type="password")
     
     if api_provider == "OpenRouter":
-        or_model = st.selectbox("사용할 모델 선택", ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.5-flash"])
-        st.markdown("[🔗 OpenRouter 무료 API 키 발급](https://openrouter.ai/keys)")
+        # --- 💡 [신규] 오픈라우터 무료/유료 모델 분류 로직 ---
+        or_model_type = st.radio("모델 유형 선택", ["무료 모델", "유료 모델"], horizontal=True)
+        
+        if or_model_type == "무료 모델":
+            or_model = st.selectbox("사용할 모델 선택", [
+                "openai/gpt-oss-120b:free",
+                "google/gemma-4-31b-it:free"
+            ])
+        else:
+            or_model = st.selectbox("사용할 모델 선택", [
+                "anthropic/claude-sonnet-5",
+                "anthropic/claude-opus-4.8",
+                "google/gemini-3.5-flash",
+                "deepseek/deepseek-v4-pro",
+                "qwen/qwen3.7-plus",
+                "z-ai/glm-5.2"
+            ])
+            
+        st.markdown("[🔗 OpenRouter API 키 발급](https://openrouter.ai/keys)")
     else:
-        st.markdown("[👉 Google AI Studio 무료 API 키 발급](https://aistudio.google.com/app/apikey)")
+        # --- 💡 [신규] 구글 AI 선택 시 모델 고정 안내 ---
+        st.info("💡 Google AI Studio는 **'gemini-3.5-flash'** 모델로 고정되어 실행됩니다.")
+        st.markdown("[👉 Google AI Studio API 키 발급](https://aistudio.google.com/app/apikey)")
     
     st.markdown("---")
     st.subheader("📚 내장된 기본 평가 기준 파일")
@@ -173,7 +191,6 @@ if submit_btn:
 
             status_box.warning(f"🔍 [마무리 준비] {api_provider} API를 통해 심층 분석을 시작합니다...")
             
-            # --- 💡 [신규 기능 2, 3] 프롬프트 양식 및 작성 규칙 고도화 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
 
@@ -247,22 +264,23 @@ if submit_btn:
             """
             
             result_text = ""
+            output_container = st.empty()
             
-            # --- 💡 [신규 기능 1] 선택된 API 제공자에 따른 분기 처리 ---
             if api_provider == "Google AI Studio":
                 genai.configure(api_key=api_key)
-                best_model_name = ""
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods:
-                        best_model_name = m.name.replace("models/", "")
-                        if 'flash' in best_model_name or 'pro' in best_model_name:
-                            break 
-                if best_model_name == "":
-                    raise Exception("Google AI Studio에서 사용할 수 있는 모델이 없습니다.")
+                
+                # --- 💡 [신규] Google API 모델을 gemini-3.5-flash로 강제 고정 ---
+                best_model_name = "gemini-3.5-flash"
                 
                 model = genai.GenerativeModel(best_model_name)
-                response = model.generate_content(prompt)
-                result_text = response.text
+                response = model.generate_content(prompt, stream=True)
+                
+                for chunk in response:
+                    if chunk.text:
+                        result_text += chunk.text
+                        output_container.markdown(result_text + " ▌")
+                        
+                output_container.markdown(result_text)
 
             elif api_provider == "OpenRouter":
                 headers = {
@@ -273,13 +291,12 @@ if submit_btn:
                     "model": or_model,
                     "messages": [{"role": "user", "content": prompt}]
                 }
-                # OpenRouter 사용 시 안정성을 위해 넉넉한 타임아웃 부여
                 res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=180)
                 res.raise_for_status()
                 result_text = res.json()['choices'][0]['message']['content']
+                output_container.markdown(result_text)
 
             status_box.success("✅ [분석 완료!] 심층 분석이 완료되었습니다. 결과물을 확인해 주세요!")
-            st.write(result_text)
             
             word_file = create_word_file(result_text)
             st.download_button(
@@ -297,7 +314,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v8.0<br>
+    🏫 학교생활기록부 분석 시스템 v8.4<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

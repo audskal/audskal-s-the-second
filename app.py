@@ -137,21 +137,26 @@ def create_word_file(text, keyword_stats=None):
     doc = Document()
     doc.add_heading('AI 생기부 분석 결과 보고서', 0)
     
+    # 💡 [신규] 워드 파일에도 출처 및 주요 문맥 컬럼 확장 반영
     if keyword_stats:
-        doc.add_heading('📊 핵심 역량 키워드 통계 (Top 10)', level=1)
-        table = doc.add_table(rows=1, cols=4)
+        doc.add_heading('📊 핵심 역량 키워드 통계 및 주요 문맥 (Top 10)', level=1)
+        table = doc.add_table(rows=1, cols=6)
         table.style = 'Table Grid'
         hdr = table.rows[0].cells
         hdr[0].text = '순위'
         hdr[1].text = '키워드'
-        hdr[2].text = '빈도(회)'
-        hdr[3].text = '진로/학과 연관성 및 선정 사유'
+        hdr[2].text = '빈도'
+        hdr[3].text = '출처(영역)'
+        hdr[4].text = '주요 문맥(원문 발췌)'
+        hdr[5].text = '진로/역량 연관성'
         for item in keyword_stats:
             row = table.add_row().cells
             row[0].text = str(item.get("rank", ""))
             row[1].text = str(item.get("keyword", ""))
             row[2].text = str(item.get("count", ""))
-            row[3].text = str(item.get("reason", ""))
+            row[3].text = str(item.get("source", ""))
+            row[4].text = str(item.get("context", ""))
+            row[5].text = str(item.get("reason", ""))
         doc.add_paragraph("")
         
     doc.add_heading('🔬 학생부 정밀 심층 분석 내용', level=1)
@@ -201,7 +206,6 @@ if submit_btn:
             if not student_data_text.strip():
                 raise Exception("생기부에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
             
-            # --- 💡 키워드 1차 로컬 후보군 추출 작동 ---
             status_box.info("🔠 [진행상황 4/6] 생기부에서 핵심 키워드 후보를 추출하고 불용어를 정제하는 중입니다...")
             candidate_keywords = extract_candidate_keywords(student_data_text, top_n=80)
             candidate_str = ", ".join([f"{w}({c})" for w, c in candidate_keywords]) if candidate_keywords else "후보 없음"
@@ -252,7 +256,7 @@ if submit_btn:
 
             status_box.warning(f"🔍 [진행상황 6/6] {api_provider} API 인증 완료, 심층 구조적 데이터 분석을 시작합니다...")
 
-            # --- 키워드 밸리데이션 통계 전용 프롬프트 ---
+            # --- 💡 [신규] 출처 및 문맥 발췌 규칙이 포함된 키워드 프롬프트 ---
             keyword_prompt = f"""
             당신은 대한민국 대학의 입학사정관입니다. 아래는 한 학생의 학교생활기록부 원문과 프로그램이 1차로 기계 추출한 명사형 키워드 후보 목록입니다.
             
@@ -271,18 +275,26 @@ if submit_btn:
                - 교과명 및 대분류 카테고리 (예: 국어, 영어, 수학, 과학, 사회, 물리, 화학, 정보 등)
                - 학생의 전공 적합성이나 개별 역량 평가와 전혀 무관한 기초 단순 명사
             2. 반드시 '학생의 진로희망계열 및 대학 학과와 연관성이 밀접한 전문 지식 키워드' 또는 '학생의 학업 역량, 탐구 전문성, 구체적 주제를 효과적으로 증명할 수 있는 핵심 전공 키워드'만 엄선하세요.
-            3. 의미가 유사한 단어(예: '알고리즘', '알고리즘식')는 하나의 대표 키워드로 통합하고 빈도를 합산하여 순위를 매기세요.
-            4. 최종적으로 가장 신뢰도 높은 가치 있는 핵심 키워드를 빈도와 중요성을 종합 평가하여 정확히 10개만 선정하세요.
+            3. 의미가 유사한 단어는 하나의 대표 키워드로 통합하고 빈도를 합산하세요.
+            4. 최종적으로 가장 가치 있는 핵심 키워드를 정확히 10개 선정하세요.
 
             🚨 [출력 룰 - 포맷 절대 사수] 🚨
             텍스트 부연 설명이나 인사말을 절대 출력하지 말고 오직 아래 양식의 유효한 JSON 배열만 완벽하게 출력하세요.
+            단, 반드시 'count(빈도수)'가 높은 순서대로 내림차순 정렬하여 출력해야 합니다.
             [
-              {{"rank": 1, "keyword": "키워드", "count": 빈도수(정수), "reason": "진로 및 역량 연관성을 20자 내외로 간결하게 기재함."}},
+              {{
+                "rank": 1, 
+                "keyword": "키워드", 
+                "count": 빈도수(정수), 
+                "source": "1학년 진로활동, 2학년 물리학I 등 해당 키워드가 등장한 학년 및 영역",
+                "context": "[키워드]가 포함된 핵심 문장과 그 앞, 뒤 1문장 정도를 함께 원문에서 발췌하여 맥락을 파악할 수 있도록 제공",
+                "reason": "해당 키워드가 학생의 진로 및 역량을 드러내는 이유를 20자 내외로 간결하게 기재"
+              }},
               ...
             ]
             """
 
-            # --- 메인 심층 프롬프트 (v8.4 기준 복원 및 고정) ---
+            # --- 메인 심층 프롬프트 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
 
@@ -349,7 +361,7 @@ if submit_btn:
             """
 
             # ==========================================================
-            # 💡 1단계: 백구라운드 통계 데이터 분석 연동
+            # 💡 1단계: 백그라운드 통계 데이터 추출 및 파이썬 강제 정렬
             # ==========================================================
             keyword_stats = []
             try:
@@ -368,10 +380,16 @@ if submit_btn:
                 json_match = re.search(r'\[.*\]', keyword_raw, re.DOTALL)
                 if json_match:
                     keyword_stats = json.loads(json_match.group())
+                    
+                    # 💡 [신규] 파이썬 차원에서 'count' 기준 내림차순 강제 정렬 (AI 환각 대비)
+                    keyword_stats.sort(key=lambda x: int(x.get("count", 0)), reverse=True)
+                    for i, item in enumerate(keyword_stats):
+                        item["rank"] = i + 1
+
             except Exception as ke:
-                st.warning(f"⚠️ AI 가치판단 통계 렌더링에 일시적 오버헤드가 발생하여 빈도순 추출 목록으로 백업합니다.")
+                st.warning(f"⚠️ 키워드 심층 추출에 일시적 지연이 발생하여 기본 빈도순으로 대체합니다.")
                 keyword_stats = [
-                    {"rank": i + 1, "keyword": w, "count": c, "reason": "생기부 내 주요 출현 빈도 기반 핵심 키워드로 분류됨."}
+                    {"rank": i + 1, "keyword": w, "count": c, "source": "원문 전반", "context": "해당 단어가 자주 사용되었습니다.", "reason": "빈도 기반 주요 핵심어 추출"}
                     for i, (w, c) in enumerate(candidate_keywords[:10])
                 ]
 
@@ -380,7 +398,7 @@ if submit_btn:
             result_text = ""
 
             # ==========================================================
-            # 💡 2단계: 실시간 스트리밍 출력 연동 (504 에러 원천 차단)
+            # 💡 2단계: 메인 분석 실시간 스트리밍
             # ==========================================================
             if api_provider == "Google AI Studio":
                 genai.configure(api_key=api_key)
@@ -404,15 +422,17 @@ if submit_btn:
 
             # --- 화면 렌더링 세션 ---
             if keyword_stats:
-                st.subheader("📊 핵심 역량 키워드 통계 (Top 10)")
-                st.caption("※ 기본 행정 용어, 교과목 명칭 및 단순 명사는 원천 배제하고 학생 고유의 학업 전문성 및 역량 키워드만 연산한 결과입니다.")
+                st.subheader("📊 핵심 역량 키워드 통계 및 주요 문맥 (Top 10)")
+                st.caption("※ 기본 행정 용어 및 교과목 명칭을 배제하고 빈도수 내림차순으로 정렬한 학생 고유의 학업 전문성 키워드입니다.")
                 
                 table_data = []
                 for item in keyword_stats:
                     table_data.append({
                         "순위": item.get("rank", ""),
                         "핵심 키워드": item.get("keyword", ""),
-                        "출현 빈도(회)": item.get("count", ""),
+                        "빈도(회)": item.get("count", ""),
+                        "출처(학년/영역)": item.get("source", ""),
+                        "주요 문맥(원문 발췌)": item.get("context", ""),
                         "학과 연관성 및 선발 사유": item.get("reason", "")
                     })
                 st.table(table_data)
@@ -437,7 +457,7 @@ if submit_btn:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v9.0<br>
+    🏫 학교생활기록부 분석 시스템 v9.1<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)

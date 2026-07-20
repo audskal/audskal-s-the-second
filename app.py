@@ -1,7 +1,5 @@
 import streamlit as st
 import google.generativeai as genai
-import streamlit as st
-import google.generativeai as genai
 import PyPDF2
 import os
 import glob
@@ -29,32 +27,8 @@ def load_reference_pdfs(pdf_list):
 
 with st.sidebar:
     st.header("🔑 기본 설정")
-    
-    api_provider = st.radio("🤖 API 제공자 선택", ["Google AI Studio", "OpenRouter"])
-    api_key = st.text_input("🔑 API 키를 입력하세요", type="password")
-    
-    if api_provider == "OpenRouter":
-        or_model_type = st.radio("모델 유형 선택", ["무료 모델", "유료 모델"], horizontal=True)
-        
-        if or_model_type == "무료 모델":
-            or_model = st.selectbox("사용할 모델 선택", [
-                "openai/gpt-oss-120b:free",
-                "google/gemma-4-31b-it:free"
-            ])
-        else:
-            or_model = st.selectbox("사용할 모델 선택", [
-                "anthropic/claude-sonnet-5",
-                "anthropic/claude-opus-4.8",
-                "google/gemini-3.5-flash",
-                "deepseek/deepseek-v4-pro",
-                "qwen/qwen3.7-plus",
-                "z-ai/glm-5.2"
-            ])
-            
-        st.markdown("[🔗 OpenRouter API 키 발급](https://openrouter.ai/keys)")
-    else:
-        st.info("💡 Google AI Studio는 **'gemini-3.5-flash'** 모델로 고정되어 실행됩니다.")
-        st.markdown("[👉 Google AI Studio API 키 발급](https://aistudio.google.com/app/apikey)")
+    api_key = st.text_input("API 키를 입력하세요", type="password")
+    st.markdown("[👉 무료 API 키 발급받기](https://aistudio.google.com/app/apikey)")
     
     st.markdown("---")
     st.subheader("📚 내장된 기본 평가 기준 파일")
@@ -189,9 +163,22 @@ if submit_btn:
             else:
                 book_instruction = "별도로 제공된 도서 목록이 없으므로, AI가 자체적으로 학습한 실존하는 전공 적합 우수 도서를 추천해 주세요. (할루시네이션 절대 금지)"
 
-            status_box.warning(f"🔍 [마무리 준비] {api_provider} API를 통해 심층 분석을 시작합니다...")
+            status_box.warning("🔍 [마무리 준비] 최적의 AI 모델을 탐색하여 분석을 시작합니다...")
+            genai.configure(api_key=api_key)
             
-            # --- 💡 [수정됨] 4번 항목 도서 및 연계활동 문장 종결 어미 규칙 추가 ---
+            best_model_name = ""
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    best_model_name = m.name.replace("models/", "")
+                    if 'flash' in best_model_name or 'pro' in best_model_name:
+                        break 
+            
+            if best_model_name == "":
+                raise Exception("사용할 수 있는 AI 모델이 없습니다.")
+            
+            model = genai.GenerativeModel(best_model_name)
+            
+            # --- 💡 [프롬프트 수정] 객관적이고 냉철한 톤앤매너 강제 지시 및 템플릿 톤다운 적용 ---
             prompt = f"""
             당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
 
@@ -212,7 +199,7 @@ if submit_btn:
 
             🚨 [분석의 깊이 및 톤앤매너 (매우 중요)] 🚨
             1. 객관적이고 현실적인 평가 (과장 금지): 학생의 역량을 지나치게 긍정적으로 포장하거나 미사여구('탁월함', '압도적', '완벽함', '뛰어남' 등)를 남발하는 것을 엄격히 금지합니다. 실제 서류평가를 진행하는 냉철하고 객관적인 입학사정관의 시각에서, 학생이 '실제로 수행한 수준'에 맞게 현실적이고 담백하게 서술하세요.
-            2. 단순 요약 금지: 단순히 생기부 내용을 요약하지 말고 '어떤 의미를 가지는지 깊이 있게 분석'하세요.
+            2. 단순 요약 금지: 단순히 생기부 내용을 요약하거나 줄거리처럼 나열(Summary)하는 것을 금지합니다. 사실(Fact)을 바탕으로 건조하지만 깊이 있는 평가(Analysis)를 작성하세요.
 
             🚨 [절대 엄수 - 팩트 체크 및 소설 작성 금지 규칙!] 🚨
             1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 단 한 글자도 지어내지 마세요.
@@ -226,85 +213,33 @@ if submit_btn:
             
             2. 🚫 [문장별 개별 꼬리표 절대 누락 금지!]:
                - 반드시 문단 시작 부분에 **'■ 테마 요약 소제목 [출처1, 출처2]'** 형태로 적으세요.
-               - 본문을 작성할 때, 학생의 활동을 언급하는 **모든 문장의 끝에는 반드시 해당 활동의 개별 출처 꼬리표(예: [1학년 진로활동])를 달아야 합니다.**
-               - 소제목 옆에 선언한 전체 출처 목록과, 본문 문장 끝에 달린 개별 꼬리표들의 집합은 100% 일치해야 합니다. 즉흥적 추가나 누락을 금지합니다.
+               - 본문을 작성할 때, 학생의 활동을 언급하는 **모든 문장의 끝에는 반드시 해당 활동의 개별 출처 꼬리표(예: [1학년 진로활동])를 달아야 합니다.** - 소제목 옆에 선언한 전체 출처 목록과, 본문 문장 끝에 달린 개별 꼬리표들의 집합은 100% 일치해야 합니다. 즉흥적 추가나 누락을 금지합니다.
 
-            🚨 [항목별 세부 작성 양식 (반드시 지킬 것!)] 🚨
-            - 2번 항목(약점 분석): 최소 2가지 이상의 약점을 분석하세요. 약점을 지적할 때는 단순히 약점만 나열하지 말고, **반드시 학생부에 기재된 특정 활동 내용(출처 꼬리표 포함)을 먼저 구체적으로 언급한 뒤**, 이를 보완하기 위한 '구체적인 후속 활동이나 심화 탐구 방안'을 명확하게 제안하세요.
-            
-            - 4번 항목(추천 도서 및 연계 활동):
-              1) 도서를 나열할 때 반드시 **"■ 교과명(또는 영역명):"** 이라는 굵은 소제목으로 과목/영역을 확실히 구분하여 먼저 적으세요.
-              2) 각 교과명 아래에 도서를 1번부터 차례대로 순차 번호를 매겨 나열하세요.
-              3) 도서 1개당 반드시 아래의 포맷을 무조건 지키세요.
-                 [번호]. <실제 책제목> (저자명 저) - 세부 본문 내용을 바탕으로 한 구체적인 도서 소개 및 추천 이유
-                 **연계 활동:** (반드시 줄을 바꾸고 이 굵은 제목을 달 것) 학생의 [O학년 OO과목] 내용과 매칭하여 구체적으로 어떤 심화 탐구/보고서 작성을 할 수 있는지 제안함.
+            3. 🚫 [도서 추천 출력 양식 (실제 책 제목 사용 및 구체적 소개!)]:
+               - 참고 자료의 카테고리명을 책 제목으로 착각하지 마세요. 반드시 세부 본문 안에서 실제 책 제목(예: <쓸모의 과학, 신소재>)을 찾으세요.
+               - 지정된 포맷: "과목명: 순차번호. 도서명(저자명 저) - 구체적인 도서 소개 및 추천 이유" (순차 번호는 1번부터 빠짐없이 정렬)
 
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🚨🚨🚨 [절대 엄수 - 섹션별 '문장 종결 어미' 분리 규칙! (오류 방지 핵심!)] 🚨🚨🚨
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            ※ 섹션마다 문장을 끝내는 방식(종결 어미)이 다릅니다. 절대 혼동하지 마세요.
+            4. 개조식 어미 사용: 문장 끝은 '~함', '~임', '~됨', '~판단됨' 으로 명사형 종결할 것.
 
-            ▶ [1번, 2번, 5번 항목] → 반드시 '개조식(명사형 종결)' 사용
-               - 모든 문장의 끝을 반드시 '~함', '~임', '~됨', '~판단됨', '~필요함', '~보임', '~드러남' 등 명사형으로 종결할 것.
-               - '~합니다', '~입니다', '~됩니다', '~습니다', '~이다', '~한다' 같은 경어체/평서문 종결어미는 절대 사용 금지.
-
-            ▶ [3번 항목 중 '면접 예상 질문'] → 반드시 '완결된 질문 문장(의문문/평서문)' 사용
-               - 면접관이 학생에게 직접 묻는 '실제 질문'이므로 개조식(~함/~임)을 절대 사용하지 말 것.
-               - 반드시 '~까?', '~는가?', '~인가?', '~설명해 보세요.', '~말해 보시오.' 형태의 완전한 문장으로 종결할 것.
-
-            ▶ [3번 항목 중 '추천 심화 탐구 주제'] → 명사구 또는 개조식으로 작성(무방함)
-
-            ▶ [4번 항목 (추천 도서 및 연계 활동)] → 지정된 특수 종결 어미 강제 적용
-               - 책 설명 문장과 연계 활동 제안 문장의 마무리는 무조건 아래 두 가지 중 하나로만 끝맺어야 합니다.
-               - 1) "~~함에 있어 도움이 될 것이라 생각됨."
-               - 2) "~에 도움을 줄 수 있을 것이라 판단됨."
-               - 다른 어미 사용은 절대 금지합니다.
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            💡 [형식 참고용 정답 템플릿 (현실적이고 담백한 톤앤매너 예시)]
+            ### 1. 전공 적합성 및 주요 경쟁력
+            ■ 공학적 설계 및 문제 해결 역량 [1학년 기술·가정, 2학년 동아리활동]
+            학생은 실생활 문제 해결을 위한 공학적 사고 능력을 구체적인 활동으로 구현하고자 노력함. 발명품 만들기 프로젝트에서 기존의 문제점을 구체화하여 디자인을 개선하는 과정을 경험함 [1학년 기술·가정]. 몰 질량 측정 실험에서 실패 원인을 분석하고 재실험하여 오차를 줄이는 등 주도적인 탐구 태도를 보여줌 [2학년 동아리활동].
 
             위의 모든 규칙과 템플릿을 완벽히 적용하여, 아래 5가지 양식에 맞추어 최종 결과물을 작성해 주세요.
-            ### 1. 전공 적합성 및 주요 경쟁력 (테마별 엄선, 객관적/현실적 분석 서술, 100% 일치하는 분리 출처, 개조식 종결)
-            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (특정 활동 선 언급 후 구체적 보완책 제시, 100% 일치하는 분리 출처, 개조식 종결) ※ 부재중인 학년의 기록 부족 지적 불가!
-            ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지 (※ 면접 질문은 반드시 '~다/~까/~요/~오' 형태의 완결된 질문 문장으로 종결!)
-            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (교과명 분류, 도서명(저자) 형식, **연계 활동:** 명시적 서술 필수, 지정된 종결 어미 강제 적용!)
-            ### 5. 종합 의견 및 향후 발전 방향 (※ 반드시 개조식 종결! '~합니다/~됩니다' 경어체 절대 금지!)
+            ### 1. 전공 적합성 및 주요 경쟁력 (테마별 엄선, 객관적/현실적 분석 서술, 100% 일치하는 분리 출처, 개조식)
+            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (최소 2가지 이상 엄선된 약점 분석, 100% 일치하는 분리 출처, 개조식) ※ 부재중인 학년의 기록 부족 지적 불가!
+            ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지
+            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (과목명: 순차번호. 도서명(저자) 형식 준수)
+            ### 5. 종합 의견 및 향후 발전 방향
             """
             
-            result_text = ""
-            output_container = st.empty()
+            response = model.generate_content(prompt)
             
-            if api_provider == "Google AI Studio":
-                genai.configure(api_key=api_key)
-                
-                # --- 💡 [신규] Google API 모델을 gemini-3.5-flash로 강제 고정 ---
-                best_model_name = "gemini-3.5-flash"
-                
-                model = genai.GenerativeModel(best_model_name)
-                response = model.generate_content(prompt, stream=True)
-                
-                for chunk in response:
-                    if chunk.text:
-                        result_text += chunk.text
-                        output_container.markdown(result_text + " ▌")
-                        
-                output_container.markdown(result_text)
-
-            elif api_provider == "OpenRouter":
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                data = {
-                    "model": or_model,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=180)
-                res.raise_for_status()
-                result_text = res.json()['choices'][0]['message']['content']
-                output_container.markdown(result_text)
-
             status_box.success("✅ [분석 완료!] 심층 분석이 완료되었습니다. 결과물을 확인해 주세요!")
+            st.write(response.text)
             
-            word_file = create_word_file(result_text)
+            word_file = create_word_file(response.text)
             st.download_button(
                 label="📥 분석 결과 워드 다운로드",
                 data=word_file,
@@ -312,337 +247,13 @@ if submit_btn:
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
             
-        except requests.exceptions.Timeout:
-            status_box.error("오류가 발생했습니다: 데이터 처리에 너무 오랜 시간이 걸려 서버가 응답을 포기했습니다. 데이터 분량을 조금 줄여서 다시 시도해 주세요.")
         except Exception as e:
             status_box.error(f"오류가 발생했습니다: {e}")
 
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v8.5<br>
-    만든이: <b>신선여자고등학교 김명남</b>
-</div>
-""", unsafe_allow_html=True)
-import PyPDF2
-import os
-import glob
-import requests
-import re
-from docx import Document
-from io import BytesIO
-from bs4 import BeautifulSoup
-
-st.set_page_config(page_title="audskal의 학교생활기록부 분석", layout="wide")
-st.title("🏫 객관적이고 체계적인 학생부 분석")
-st.markdown("API 키에 맞는 최적의 AI 모델을 자동으로 찾아내어 생기부를 체계적으로 분석합니다.")
-
-@st.cache_data(show_spinner=False)
-def load_reference_pdfs(pdf_list):
-    text = ""
-    for pdf_file in pdf_list:
-        with open(pdf_file, "rb") as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
-    return text
-
-with st.sidebar:
-    st.header("🔑 기본 설정")
-    
-    api_provider = st.radio("🤖 API 제공자 선택", ["Google AI Studio", "OpenRouter"])
-    api_key = st.text_input("🔑 API 키를 입력하세요", type="password")
-    
-    if api_provider == "OpenRouter":
-        or_model_type = st.radio("모델 유형 선택", ["무료 모델", "유료 모델"], horizontal=True)
-        
-        if or_model_type == "무료 모델":
-            or_model = st.selectbox("사용할 모델 선택", [
-                "openai/gpt-oss-120b:free",
-                "google/gemma-4-31b-it:free"
-            ])
-        else:
-            or_model = st.selectbox("사용할 모델 선택", [
-                "anthropic/claude-sonnet-5",
-                "anthropic/claude-opus-4.8",
-                "google/gemini-3.5-flash",
-                "deepseek/deepseek-v4-pro",
-                "qwen/qwen3.7-plus",
-                "z-ai/glm-5.2"
-            ])
-            
-        st.markdown("[🔗 OpenRouter API 키 발급](https://openrouter.ai/keys)")
-    else:
-        st.info("💡 Google AI Studio는 **'gemini-3.5-flash'** 모델로 고정되어 실행됩니다.")
-        st.markdown("[👉 Google AI Studio API 키 발급](https://aistudio.google.com/app/apikey)")
-    
-    st.markdown("---")
-    st.subheader("📚 내장된 기본 평가 기준 파일")
-    pdf_files = glob.glob("*.pdf")
-    if pdf_files:
-        for f in pdf_files:
-            st.write(f"- {f}")
-    else:
-        st.error("폴더에 기준 PDF 파일이 없습니다!")
-
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.subheader("1. 학교생활기록부 데이터 입력")
-    st.info("💡 나이스(NEIS) 원본 PDF는 보안상 안 읽히는 경우가 많습니다. 가급적 아래 빈칸에 내용을 직접 긁어서 붙여넣으세요!")
-    
-    student_file = st.file_uploader("📂 학생 생기부 파일 (PDF) 업로드", type=["pdf"], key="student_upload")
-    st.markdown("**-- 또는 --**")
-    student_text_input = st.text_area("📝 생기부 내용 직접 붙여넣기 (추천)", height=250)
-
-with col2:
-    st.subheader("2. 분석 옵션 및 추가 데이터 입력")
-    teacher_context = st.text_area(
-        "💡 특이사항 및 희망 전공 (예: 생명공학과 진학 희망)", 
-        height=70
-    )
-    
-    st.markdown("**🎯 목표 대학 전형 / 전공 가이드북 (선택)**")
-    st.info("해당 대학의 가이드북을 업로드하면 평가 기준을 벤치마킹합니다. (※ 결과물에 특정 대학명은 노출되지 않습니다.)")
-    univ_guide_file = st.file_uploader("🏫 대학 가이드북 PDF 업로드", type=["pdf"], key="univ_guide_upload")
-    
-    st.markdown("**📚 맞춤형 추천 도서 참고 자료 (선택)**")
-    default_url = "https://nojaesu.com/category/DIRECTORY/%EA%B5%90%EA%B3%BC%EC%97%B0%EA%B3%84%26%EC%A0%84%EA%B3%B5%EC%A0%81%ED%95%A9%EC%84%9C%20%EA%B8%B0%EC%82%AC%20%EB%AA%A8%EC%9D%8C"
-    book_url = st.text_input("🌐 추천 도서 웹사이트 주소(URL)", value=default_url)
-    
-    submit_btn = st.button("↵ 🚀 심층 분석 시작", type="primary", use_container_width=True)
-
-st.markdown("---")
-
-def create_word_file(text):
-    doc = Document()
-    doc.add_heading('AI 생기부 분석 결과 보고서', 0)
-    doc.add_paragraph(text)
-    
-    file_stream = BytesIO()
-    doc.save(file_stream)
-    file_stream.seek(0)
-    return file_stream
-
-if submit_btn:
-    if not api_key:
-        st.error("왼쪽에 API 키를 먼저 입력해 주세요!")
-    elif not pdf_files:
-        st.error("기준이 될 PDF 파일이 폴더에 없습니다!")
-    elif not student_file and not student_text_input.strip():
-        st.error("학생의 생기부 파일(PDF)을 업로드하거나 텍스트를 직접 붙여넣어 주세요!")
-    else:
-        status_box = st.empty()
-        
-        try:
-            status_box.info("⏳ [진행상황 1/5] 내장된 기본 가이드북을 학습하는 중입니다...")
-            reference_text = load_reference_pdfs(pdf_files)
-            
-            univ_guide_text = ""
-            if univ_guide_file:
-                status_box.info("🏫 [진행상황 2/5] 업로드된 목표 대학 가이드북의 평가 기준을 분석 중입니다...")
-                univ_pdf_reader = PyPDF2.PdfReader(univ_guide_file)
-                for page in univ_pdf_reader.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        univ_guide_text += extracted + "\n"
-            else:
-                status_box.info("🏫 [진행상황 2/5] 목표 대학 가이드북이 생략되었습니다. 기본 범용 기준으로 진행합니다.")
-
-            status_box.info("⏳ [진행상황 3/5] 학생의 생기부 데이터를 추출하는 중입니다...")
-            student_data_text = ""
-            
-            if student_text_input.strip():
-                student_data_text = student_text_input
-            elif student_file:
-                student_pdf_reader = PyPDF2.PdfReader(student_file)
-                for page in student_pdf_reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        student_data_text += text + "\n"
-            
-            if not student_data_text.strip():
-                raise Exception("생기부에서 글씨를 읽을 수 없습니다! PDF 대신 빈칸에 직접 붙여넣어 주세요.")
-            
-            status_box.info("📚 [진행상황 4/5] 추천 도서 목록 및 상세 본문을 수집하는 중입니다...")
-            actual_book_data = ""
-            
-            if book_url.strip():
-                try:
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    response = requests.get(book_url.strip(), headers=headers)
-                    response.raise_for_status() 
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    actual_book_data += soup.get_text(separator=' ', strip=True) + "\n\n"
-                    
-                    base_url = "/".join(book_url.split("/")[:3])
-                    article_links = []
-                    for a in soup.find_all('a', href=True):
-                        href = a['href']
-                        if re.match(r'^/[0-9]+(\?.*)?$', href) or "/entry/" in href:
-                            full_url = base_url + href.split('?')[0]
-                            if full_url not in article_links:
-                                article_links.append(full_url)
-                    
-                    if article_links:
-                        status_box.info(f"📚 [도서 연동] {len(article_links[:10])}개의 구체적인 도서 상세 설명을 추가로 수집 중입니다...")
-                        for link in article_links[:10]:
-                            try:
-                                sub_res = requests.get(link, headers=headers, timeout=5)
-                                sub_soup = BeautifulSoup(sub_res.text, 'html.parser')
-                                content_area = sub_soup.find('div', class_='entry-content') or sub_soup.find('div', class_='article_view') or sub_soup.body
-                                if content_area:
-                                    actual_book_data += content_area.get_text(separator=' ', strip=True) + "\n\n"
-                            except:
-                                pass
-                except Exception as e:
-                    st.warning(f"⚠️ 입력하신 링크에 접속할 수 없습니다. (오류 메시지: {e})")
-            
-            if actual_book_data:
-                actual_book_data = actual_book_data.replace("'쌤과 함께! 교과 연계 적합書]", "")
-                actual_book_data = actual_book_data.replace("쌤과 함께! 교과 연계 적합書", "")
-                actual_book_data = re.sub(r'[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]', '', actual_book_data)
-
-            book_instruction = ""
-            if actual_book_data.strip():
-                book_instruction = "반드시 아래 제공된 [추천 도서 참고 자료]의 텍스트 안에 '실제로 존재하는 책 제목과 저자'만 추출해서 추천하세요. 자료 안에 적합한 책이 없다면 억지로 지어내지 마세요."
-            else:
-                book_instruction = "별도로 제공된 도서 목록이 없으므로, AI가 자체적으로 학습한 실존하는 전공 적합 우수 도서를 추천해 주세요. (할루시네이션 절대 금지)"
-
-            status_box.warning(f"🔍 [마무리 준비] {api_provider} API를 통해 심층 분석을 시작합니다...")
-            
-            # --- 💡 [수정됨] 4번 항목 도서 및 연계활동 문장 종결 어미 규칙 추가 ---
-            prompt = f"""
-            당신은 20년 경력의 대한민국 최고 수석 진학 상담 교사이자 입학사정관입니다.
-
-            [담당 교사의 특별 지시사항 및 희망 전공]
-            {teacher_context if teacher_context else "특별한 지시사항 없음."}
-            
-            [추천 도서 참고 자료 (게시물 상세 본문 포함)]
-            {actual_book_data if actual_book_data else "제공된 목록 없음."}
-
-            [기본 범용 대학 평가 기준 자료]
-            {reference_text}
-
-            [목표 대학 전형/전공 가이드북 평가 기준 (선택 사항)]
-            {univ_guide_text if univ_guide_text else "제공된 목표 대학 가이드북 없음. 기본 범용 평가 기준만 적용할 것."}
-
-            [업로드된 학생의 생기부 내용 (100% 팩트)]
-            {student_data_text}
-
-            🚨 [분석의 깊이 및 톤앤매너 (매우 중요)] 🚨
-            1. 객관적이고 현실적인 평가 (과장 금지): 학생의 역량을 지나치게 긍정적으로 포장하거나 미사여구('탁월함', '압도적', '완벽함', '뛰어남' 등)를 남발하는 것을 엄격히 금지합니다. 실제 서류평가를 진행하는 냉철하고 객관적인 입학사정관의 시각에서, 학생이 '실제로 수행한 수준'에 맞게 현실적이고 담백하게 서술하세요.
-            2. 단순 요약 금지: 단순히 생기부 내용을 요약하지 말고 '어떤 의미를 가지는지 깊이 있게 분석'하세요.
-
-            🚨 [절대 엄수 - 팩트 체크 및 소설 작성 금지 규칙!] 🚨
-            1. 학생부 팩트 기반: 업로드된 내용에 없는 과목이나 활동은 단 한 글자도 지어내지 마세요.
-            2. 🚫 [진행 중인 학년 기록 부재 지적 절대 금지!]: 최신 학년의 기록이 없는 것은 당연하므로 "기록이 부족함", "학년별 연계가 끊어짐" 등의 지적을 절대 금지합니다.
-            3. 도서 추천 규칙: {book_instruction}
-            4. 특정 대학명 노출 절대 금지: 동국대학교 등 대학 이름이 직접 등장하면 안 됩니다.
-            5. 특정 문구 출력 금지: "'쌤과 함께! 교과 연계 적합書]"와 같은 불필요한 기호는 절대 출력하지 마세요.
-
-            🚨 [절대 엄수 - 출력 형식 및 '출처 100% 일치' 규칙! (가장 중요!)] 🚨
-            1. 출처 사전 확정 및 압축: 한 문단에 들어갈 핵심 활동(출처)을 **정확히 2~3개만 먼저 확정**하세요. 학년과 과목은 개별 분리하세요. (예: [1, 2학년 진로] ❌ -> [1학년 진로활동, 2학년 진로활동] ⭕)
-            
-            2. 🚫 [문장별 개별 꼬리표 절대 누락 금지!]:
-               - 반드시 문단 시작 부분에 **'■ 테마 요약 소제목 [출처1, 출처2]'** 형태로 적으세요.
-               - 본문을 작성할 때, 학생의 활동을 언급하는 **모든 문장의 끝에는 반드시 해당 활동의 개별 출처 꼬리표(예: [1학년 진로활동])를 달아야 합니다.**
-               - 소제목 옆에 선언한 전체 출처 목록과, 본문 문장 끝에 달린 개별 꼬리표들의 집합은 100% 일치해야 합니다. 즉흥적 추가나 누락을 금지합니다.
-
-            🚨 [항목별 세부 작성 양식 (반드시 지킬 것!)] 🚨
-            - 2번 항목(약점 분석): 최소 2가지 이상의 약점을 분석하세요. 약점을 지적할 때는 단순히 약점만 나열하지 말고, **반드시 학생부에 기재된 특정 활동 내용(출처 꼬리표 포함)을 먼저 구체적으로 언급한 뒤**, 이를 보완하기 위한 '구체적인 후속 활동이나 심화 탐구 방안'을 명확하게 제안하세요.
-            
-            - 4번 항목(추천 도서 및 연계 활동):
-              1) 도서를 나열할 때 반드시 **"■ 교과명(또는 영역명):"** 이라는 굵은 소제목으로 과목/영역을 확실히 구분하여 먼저 적으세요.
-              2) 각 교과명 아래에 도서를 1번부터 차례대로 순차 번호를 매겨 나열하세요.
-              3) 도서 1개당 반드시 아래의 포맷을 무조건 지키세요.
-                 [번호]. <실제 책제목> (저자명 저) - 세부 본문 내용을 바탕으로 한 구체적인 도서 소개 및 추천 이유
-                 **연계 활동:** (반드시 줄을 바꾸고 이 굵은 제목을 달 것) 학생의 [O학년 OO과목] 내용과 매칭하여 구체적으로 어떤 심화 탐구/보고서 작성을 할 수 있는지 제안함.
-
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🚨🚨🚨 [절대 엄수 - 섹션별 '문장 종결 어미' 분리 규칙! (오류 방지 핵심!)] 🚨🚨🚨
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            ※ 섹션마다 문장을 끝내는 방식(종결 어미)이 다릅니다. 절대 혼동하지 마세요.
-
-            ▶ [1번, 2번, 5번 항목] → 반드시 '개조식(명사형 종결)' 사용
-               - 모든 문장의 끝을 반드시 '~함', '~임', '~됨', '~판단됨', '~필요함', '~보임', '~드러남' 등 명사형으로 종결할 것.
-               - '~합니다', '~입니다', '~됩니다', '~습니다', '~이다', '~한다' 같은 경어체/평서문 종결어미는 절대 사용 금지.
-
-            ▶ [3번 항목 중 '면접 예상 질문'] → 반드시 '완결된 질문 문장(의문문/평서문)' 사용
-               - 면접관이 학생에게 직접 묻는 '실제 질문'이므로 개조식(~함/~임)을 절대 사용하지 말 것.
-               - 반드시 '~까?', '~는가?', '~인가?', '~설명해 보세요.', '~말해 보시오.' 형태의 완전한 문장으로 종결할 것.
-
-            ▶ [3번 항목 중 '추천 심화 탐구 주제'] → 명사구 또는 개조식으로 작성(무방함)
-
-            ▶ [4번 항목 (추천 도서 및 연계 활동)] → 지정된 특수 종결 어미 강제 적용
-               - 책 설명 문장과 연계 활동 제안 문장의 마무리는 무조건 아래 두 가지 중 하나로만 끝맺어야 합니다.
-               - 1) "~~함에 있어 도움이 될 것이라 생각됨."
-               - 2) "~에 도움을 줄 수 있을 것이라 판단됨."
-               - 다른 어미 사용은 절대 금지합니다.
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-            위의 모든 규칙과 템플릿을 완벽히 적용하여, 아래 5가지 양식에 맞추어 최종 결과물을 작성해 주세요.
-            ### 1. 전공 적합성 및 주요 경쟁력 (테마별 엄선, 객관적/현실적 분석 서술, 100% 일치하는 분리 출처, 개조식 종결)
-            ### 2. 범용 평가 기준에 비추어 볼 때 보완이 필요한 약점 (특정 활동 선 언급 후 구체적 보완책 제시, 100% 일치하는 분리 출처, 개조식 종결) ※ 부재중인 학년의 기록 부족 지적 불가!
-            ### 3. 추천 심화 탐구 주제 및 면접 예상 질문 3가지 (※ 면접 질문은 반드시 '~다/~까/~요/~오' 형태의 완결된 질문 문장으로 종결!)
-            ### 4. 맞춤형 추천 도서 및 연계 활동 제안 (교과명 분류, 도서명(저자) 형식, **연계 활동:** 명시적 서술 필수, 지정된 종결 어미 강제 적용!)
-            ### 5. 종합 의견 및 향후 발전 방향 (※ 반드시 개조식 종결! '~합니다/~됩니다' 경어체 절대 금지!)
-            """
-            
-            result_text = ""
-            output_container = st.empty()
-            
-            if api_provider == "Google AI Studio":
-                genai.configure(api_key=api_key)
-                
-                # --- 💡 [신규] Google API 모델을 gemini-3.5-flash로 강제 고정 ---
-                best_model_name = "gemini-3.5-flash"
-                
-                model = genai.GenerativeModel(best_model_name)
-                response = model.generate_content(prompt, stream=True)
-                
-                for chunk in response:
-                    if chunk.text:
-                        result_text += chunk.text
-                        output_container.markdown(result_text + " ▌")
-                        
-                output_container.markdown(result_text)
-
-            elif api_provider == "OpenRouter":
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                data = {
-                    "model": or_model,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=180)
-                res.raise_for_status()
-                result_text = res.json()['choices'][0]['message']['content']
-                output_container.markdown(result_text)
-
-            status_box.success("✅ [분석 완료!] 심층 분석이 완료되었습니다. 결과물을 확인해 주세요!")
-            
-            word_file = create_word_file(result_text)
-            st.download_button(
-                label="📥 분석 결과 워드 다운로드",
-                data=word_file,
-                file_name="생기부_맞춤형_분석결과.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
-            
-        except requests.exceptions.Timeout:
-            status_box.error("오류가 발생했습니다: 데이터 처리에 너무 오랜 시간이 걸려 서버가 응답을 포기했습니다. 데이터 분량을 조금 줄여서 다시 시도해 주세요.")
-        except Exception as e:
-            status_box.error(f"오류가 발생했습니다: {e}")
-
-st.divider()
-st.markdown("""
-<div style='text-align: center; color: gray; padding: 20px; font-size: 13px;'>
-    🏫 학교생활기록부 분석 시스템 v8.5<br>
+    🏫 학교생활기록부 분석 시스템 v7.6<br>
     만든이: <b>신선여자고등학교 김명남</b>
 </div>
 """, unsafe_allow_html=True)
